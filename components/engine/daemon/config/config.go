@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
-	"runtime"
 	"strings"
 	"sync"
 
@@ -64,6 +63,8 @@ var flatOptions = map[string]bool{
 var skipValidateOptions = map[string]bool{
 	"features": true,
 	"builder":  true,
+	// Corresponding flag has been removed because it was already unusable
+	"deprecated-key-path": true,
 }
 
 // skipDuplicates contains configuration keys that
@@ -246,10 +247,6 @@ func New() *Config {
 	config := Config{}
 	config.LogConfig.Config = make(map[string]string)
 	config.ClusterOpts = make(map[string]string)
-
-	if runtime.GOOS != "linux" {
-		config.V2Only = true
-	}
 	return &config
 }
 

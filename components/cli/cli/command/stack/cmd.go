@@ -17,6 +17,13 @@ type commonOptions struct {
 	orchestrator command.Orchestrator
 }
 
+func (o *commonOptions) Orchestrator() command.Orchestrator {
+	if o == nil {
+		return command.OrchestratorSwarm
+	}
+	return o.orchestrator
+}
+
 // NewStackCommand returns a cobra command for `stack` subcommands
 func NewStackCommand(dockerCli command.Cli) *cobra.Command {
 	var opts commonOptions
@@ -41,6 +48,10 @@ func NewStackCommand(dockerCli command.Cli) *cobra.Command {
 	}
 	defaultHelpFunc := cmd.HelpFunc()
 	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+		if err := cmd.Root().PersistentPreRunE(c, args); err != nil {
+			fmt.Fprintln(dockerCli.Err(), err)
+			return
+		}
 		if err := cmd.PersistentPreRunE(c, args); err != nil {
 			fmt.Fprintln(dockerCli.Err(), err)
 			return

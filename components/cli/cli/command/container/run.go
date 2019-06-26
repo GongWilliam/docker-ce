@@ -56,6 +56,8 @@ func NewRunCommand(dockerCli command.Cli) *cobra.Command {
 	flags.BoolVar(&opts.sigProxy, "sig-proxy", true, "Proxy received signals to the process")
 	flags.StringVar(&opts.name, "name", "", "Assign a name to the container")
 	flags.StringVar(&opts.detachKeys, "detach-keys", "", "Override the key sequence for detaching a container")
+	flags.StringVar(&opts.createOptions.pull, "pull", PullImageMissing,
+		`Pull image before running ("`+PullImageAlways+`"|"`+PullImageMissing+`"|"`+PullImageNever+`")`)
 
 	// Add an explicit help that doesn't have a `-h` to prevent the conflict
 	// with hostname
@@ -68,7 +70,7 @@ func NewRunCommand(dockerCli command.Cli) *cobra.Command {
 }
 
 func runRun(dockerCli command.Cli, flags *pflag.FlagSet, ropts *runOptions, copts *containerOptions) error {
-	proxyConfig := dockerCli.ConfigFile().ParseProxyConfig(dockerCli.Client().DaemonHost(), copts.env.GetAll())
+	proxyConfig := dockerCli.ConfigFile().ParseProxyConfig(dockerCli.Client().DaemonHost(), opts.ConvertKVStringsToMapWithNil(copts.env.GetAll()))
 	newEnv := []string{}
 	for k, v := range proxyConfig {
 		if v == nil {
@@ -78,7 +80,7 @@ func runRun(dockerCli command.Cli, flags *pflag.FlagSet, ropts *runOptions, copt
 		}
 	}
 	copts.env = *opts.NewListOptsRef(&newEnv, nil)
-	containerConfig, err := parse(flags, copts)
+	containerConfig, err := parse(flags, copts, dockerCli.ServerInfo().OSType)
 	// just in case the parse does not exit
 	if err != nil {
 		reportError(dockerCli.Err(), "run", err.Error(), true)
@@ -113,11 +115,6 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 		config.AttachStdout = false
 		config.AttachStderr = false
 		config.StdinOnce = false
-	}
-
-	// Disable sigProxy when in TTY mode
-	if config.Tty {
-		opts.sigProxy = false
 	}
 
 	// Telling the Windows daemon the initial size of the tty during start makes

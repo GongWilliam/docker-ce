@@ -1,12 +1,11 @@
-include ../containerd.mk
-
 ARCH=$(shell uname -m)
 ENGINE_DIR:=$(CURDIR)/../../engine
 CLI_DIR:=$(CURDIR)/../../cli
 GITCOMMIT=$(shell cd $(ENGINE_DIR) && git rev-parse --short HEAD)
 VERSION?=0.0.0-dev
+STATIC_VERSION=$(shell ../static/gen-static-ver $(ENGINE_DIR) $(VERSION))
 GO_BASE_IMAGE=golang
-GO_VERSION:=1.11.3
+GO_VERSION:=1.12.5
 GO_IMAGE?=$(GO_BASE_IMAGE):$(GO_VERSION)
 GEN_RPM_VER=$(shell ./gen-rpm-ver $(CLI_DIR) $(VERSION))
 CHOWN=docker run --rm -i -v $(CURDIR):/v -w /v alpine chown
@@ -21,14 +20,14 @@ endif
 BUILD?=docker build \
 	$(BUILD_IMAGE_FLAG) \
 	--build-arg GO_IMAGE=$(GO_IMAGE) \
-	--build-arg ENGINE_IMAGE=$(shell cat rpmbuild/SOURCES/engine-image) \
 	-t rpmbuild-$@/$(ARCH) \
 	-f $@/$(DOCKERFILE) \
 	.
 
 SPEC_FILES?=docker-ce.spec docker-ce-cli.spec
 SPECS?=$(addprefix SPECS/, $(SPEC_FILES))
-RPMBUILD=docker run --privileged --rm -i\
+RPMBUILD=docker run --privileged --rm -i \
+	-e PLATFORM \
 	-v $(CURDIR)/rpmbuild/SOURCES:/root/rpmbuild/SOURCES \
 	-v $(CURDIR)/rpmbuild/RPMS:/root/rpmbuild/RPMS \
 	-v $(CURDIR)/rpmbuild/SRPMS:/root/rpmbuild/SRPMS
@@ -40,9 +39,8 @@ RPMBUILD_FLAGS?=-ba\
 	$(SPECS)
 RUN?=$(RPMBUILD) rpmbuild-$@/$(ARCH) $(RPMBUILD_FLAGS)
 
-SOURCE_FILES=engine-image cli.tgz docker.service docker.socket distribution_based_engine.json
+SOURCE_FILES=engine-image engine.tgz cli.tgz docker.service docker.socket distribution_based_engine.json plugin-installers.tgz
 SOURCES=$(addprefix rpmbuild/SOURCES/, $(SOURCE_FILES))
-
 
 .PHONY: help
 help: ## show make targets
@@ -63,30 +61,14 @@ clean: ## remove build artifacts
 rpm: fedora centos ## build all rpm packages
 
 .PHONY: fedora
-fedora: fedora-28 fedora-27 fedora-26 ## build all fedora rpm packages
+fedora: fedora-31 fedora-30 fedora-29 fedora-28 ## build all fedora rpm packages
 
 .PHONY: centos
 centos: centos-7 ## build all centos rpm packages
 
-.PHONY: fedora-29
-fedora-29: ## build fedora-29 rpm packages
-fedora-29: $(SOURCES)
-	$(CHOWN) -R root:root rpmbuild
-	$(BUILD)
-	$(RUN)
-	$(CHOWN) -R $(shell id -u):$(shell id -g) rpmbuild
-
-.PHONY: fedora-28
-fedora-28: ## build fedora-28 rpm packages
-fedora-28: $(SOURCES)
-	$(CHOWN) -R root:root rpmbuild
-	$(BUILD)
-	$(RUN)
-	$(CHOWN) -R $(shell id -u):$(shell id -g) rpmbuild
-
-.PHONY: fedora-27
-fedora-27: ## build fedora-27 rpm packages
-fedora-27: $(SOURCES)
+.PHONY: fedora-%
+fedora-%: ## build fedora rpm packages
+fedora-%: $(SOURCES)
 	$(CHOWN) -R root:root rpmbuild
 	$(BUILD)
 	$(RUN)
@@ -99,6 +81,14 @@ centos-7: $(SOURCES)
 	$(BUILD)
 	$(RUN)
 	$(CHOWN) -R $(shell id -u):$(shell id -g) rpmbuild
+
+rpmbuild/SOURCES/engine.tgz:
+	mkdir -p rpmbuild/SOURCES
+	docker run --rm -i -w /v \
+		-v $(ENGINE_DIR):/engine \
+		-v $(CURDIR)/rpmbuild/SOURCES:/v \
+		alpine \
+		tar -C / -c -z -f /v/engine.tgz --exclude .git engine
 
 rpmbuild/SOURCES/cli.tgz:
 	mkdir -p rpmbuild/SOURCES
@@ -116,12 +106,21 @@ rpmbuild/SOURCES/docker.socket: ../systemd/docker.socket
 	mkdir -p $(@D)
 	cp $< $@
 
+# TODO: Figure out how to decouple this
+# TODO: These might just end up being static files that are hardcoded
+# TODO: FROM HERE <=====================
 rpmbuild/SOURCES/engine-image:
-	$(MAKE) -C ../image image-linux-dm
 	mkdir -p $(@D)
-	cp ../image/image-linux-dm $@
+	echo "docker.io/dockereng/engine-community-dm:$(STATIC_VERSION)" > $@
 
 rpmbuild/SOURCES/distribution_based_engine.json: rpmbuild/SOURCES/engine-image
 	mkdir -p $(@D)
-	docker inspect "$(shell cat $<)" \
-		--format '{{index .Config.Labels "com.docker.distribution_based_engine" }}' > $@
+	echo '{"platform":"Docker Engine - Community","engine_image":"engine-community-dm","containerd_min_version":"1.2.0-beta.1","runtime":"host_install"}' > $@
+# TODO: TO HERE <=====================
+
+rpmbuild/SOURCES/plugin-installers.tgz: $(wildcard ../plugins/*)
+	docker run --rm -i -w /v \
+		-v $(shell readlink -e ../plugins):/plugins \
+		-v $(CURDIR)/rpmbuild/SOURCES:/v \
+		alpine \
+		tar -C / -c -z -f /v/plugin-installers.tgz --exclude .git plugins

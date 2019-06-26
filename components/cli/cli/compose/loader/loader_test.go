@@ -283,7 +283,7 @@ services:
   foo:
     image: busybox
     credential_spec:
-      File: "/foo"
+      file: "/foo"
     configs: [super]
 configs:
   super:
@@ -293,6 +293,20 @@ configs:
 	assert.Assert(t, is.Len(actual.Services, 1))
 	assert.Check(t, is.Equal(actual.Services[0].CredentialSpec.File, "/foo"))
 	assert.Assert(t, is.Len(actual.Configs, 1))
+}
+
+func TestLoadV38(t *testing.T) {
+	actual, err := loadYAML(`
+version: "3.8"
+services:
+  foo:
+    image: busybox
+    credential_spec:
+      config: "0bt9dmxjvjiqermk6xrop3ekq"
+`)
+	assert.NilError(t, err)
+	assert.Assert(t, is.Len(actual.Services, 1))
+	assert.Check(t, is.Equal(actual.Services[0].CredentialSpec.Config, "0bt9dmxjvjiqermk6xrop3ekq"))
 }
 
 func TestParseAndLoad(t *testing.T) {
@@ -1461,6 +1475,47 @@ services:
 	}
 }
 
+func TestLoadSysctls(t *testing.T) {
+	config, err := loadYAML(`
+version: "3.8"
+services:
+  web:
+    image: busybox
+    sysctls:
+      - net.core.somaxconn=1024
+      - net.ipv4.tcp_syncookies=0
+      - testing.one.one=
+      - testing.one.two
+`)
+	assert.NilError(t, err)
+
+	expected := types.Mapping{
+		"net.core.somaxconn":      "1024",
+		"net.ipv4.tcp_syncookies": "0",
+		"testing.one.one":         "",
+		"testing.one.two":         "",
+	}
+
+	assert.Assert(t, is.Len(config.Services, 1))
+	assert.Check(t, is.DeepEqual(expected, config.Services[0].Sysctls))
+
+	config, err = loadYAML(`
+version: "3.8"
+services:
+  web:
+    image: busybox
+    sysctls:
+      net.core.somaxconn: 1024
+      net.ipv4.tcp_syncookies: 0
+      testing.one.one: ""
+      testing.one.two:
+`)
+	assert.NilError(t, err)
+
+	assert.Assert(t, is.Len(config.Services, 1))
+	assert.Check(t, is.DeepEqual(expected, config.Services[0].Sysctls))
+}
+
 func TestTransform(t *testing.T) {
 	var source = []interface{}{
 		"80-82:8080-8082",
@@ -1483,4 +1538,129 @@ func TestTransform(t *testing.T) {
 	assert.NilError(t, err)
 
 	assert.Check(t, is.DeepEqual(samplePortsConfig, ports))
+}
+
+func TestLoadTemplateDriver(t *testing.T) {
+	config, err := loadYAML(`
+version: '3.8'
+services:
+  hello-world:
+    image: redis:alpine
+    secrets:
+      - secret
+    configs:
+      - config
+
+configs:
+  config:
+    name: config
+    external: true
+    template_driver: config-driver
+
+secrets:
+  secret:
+    name: secret
+    external: true
+    template_driver: secret-driver
+`)
+	assert.NilError(t, err)
+	expected := &types.Config{
+		Filename: "filename.yml",
+		Version:  "3.8",
+		Services: types.Services{
+			{
+				Name:  "hello-world",
+				Image: "redis:alpine",
+				Configs: []types.ServiceConfigObjConfig{
+					{
+						Source: "config",
+					},
+				},
+				Secrets: []types.ServiceSecretConfig{
+					{
+						Source: "secret",
+					},
+				},
+			},
+		},
+		Configs: map[string]types.ConfigObjConfig{
+			"config": {
+				Name:           "config",
+				External:       types.External{External: true},
+				TemplateDriver: "config-driver",
+			},
+		},
+		Secrets: map[string]types.SecretConfig{
+			"secret": {
+				Name:           "secret",
+				External:       types.External{External: true},
+				TemplateDriver: "secret-driver",
+			},
+		},
+	}
+	assert.DeepEqual(t, config, expected, cmpopts.EquateEmpty())
+}
+
+func TestLoadSecretDriver(t *testing.T) {
+	config, err := loadYAML(`
+version: '3.8'
+services:
+  hello-world:
+    image: redis:alpine
+    secrets:
+      - secret
+    configs:
+      - config
+
+configs:
+  config:
+    name: config
+    external: true
+
+secrets:
+  secret:
+    name: secret
+    driver: secret-bucket
+    driver_opts:
+      OptionA: value for driver option A
+      OptionB: value for driver option B
+`)
+	assert.NilError(t, err)
+	expected := &types.Config{
+		Filename: "filename.yml",
+		Version:  "3.8",
+		Services: types.Services{
+			{
+				Name:  "hello-world",
+				Image: "redis:alpine",
+				Configs: []types.ServiceConfigObjConfig{
+					{
+						Source: "config",
+					},
+				},
+				Secrets: []types.ServiceSecretConfig{
+					{
+						Source: "secret",
+					},
+				},
+			},
+		},
+		Configs: map[string]types.ConfigObjConfig{
+			"config": {
+				Name:     "config",
+				External: types.External{External: true},
+			},
+		},
+		Secrets: map[string]types.SecretConfig{
+			"secret": {
+				Name:   "secret",
+				Driver: "secret-bucket",
+				DriverOpts: map[string]string{
+					"OptionA": "value for driver option A",
+					"OptionB": "value for driver option B",
+				},
+			},
+		},
+	}
+	assert.DeepEqual(t, config, expected, cmpopts.EquateEmpty())
 }

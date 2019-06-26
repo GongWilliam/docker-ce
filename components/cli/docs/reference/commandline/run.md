@@ -583,6 +583,28 @@ fdisk: unable to open /dev/xvdc: Operation not permitted
 > that may be removed should not be added to untrusted containers with
 > `--device`.
 
+For Windows, the format of the string passed to the `--device` option is in
+the form of `--device=<IdType>/<Id>`. Beginning with Windows Server 2019
+and Windows 10 October 2018 Update, Windows only supports an IdType of
+`class` and the Id as a [device interface class
+GUID](https://docs.microsoft.com/en-us/windows-hardware/drivers/install/overview-of-device-interface-classes).
+Refer to the table defined in the [Windows container
+docs](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/hardware-devices-in-containers)
+for a list of container-supported device interface class GUIDs.
+
+If this option is specified for a process-isolated Windows container, _all_
+devices that implement the requested device interface class GUID are made
+available in the container. For example, the command below makes all COM
+ports on the host visible in the container.
+
+```powershell
+PS C:\> docker run --device=class/86E0D1E0-8089-11D0-9CE4-08003E301F73 mcr.microsoft.com/windows/servercore:ltsc2019
+```
+
+> **Note**: the `--device` option is only supported on process-isolated
+> Windows containers. This option fails if the container isolation is `hyperv`
+> or when running Linux Containers on Windows (LCOW).
+
 ### Restart policies (--restart)
 
 Use Docker's `--restart` to specify a container's *restart policy*. A restart
@@ -718,11 +740,11 @@ $ docker run -d --isolation default busybox top
 On Windows, `--isolation` can take one of these values:
 
 
-| Value     | Description                                                                                |
-|:----------|:-------------------------------------------------------------------------------------------|
-| `default` | Use the value specified by the Docker daemon's `--exec-opt` or system default (see below). |
-| `process` | Shared-kernel namespace isolation (not supported on Windows client operating systems older than Windows 10 1809).     |
-| `hyperv`  | Hyper-V hypervisor partition-based isolation.                                              |
+| Value     | Description                                                                                                       |
+|:----------|:------------------------------------------------------------------------------------------------------------------|
+| `default` | Use the value specified by the Docker daemon's `--exec-opt` or system default (see below).                        |
+| `process` | Shared-kernel namespace isolation (not supported on Windows client operating systems older than Windows 10 1809). |
+| `hyperv`  | Hyper-V hypervisor partition-based isolation.                                                                     |
 
 The default isolation on Windows server operating systems is `process`. The default
 isolation on Windows client operating systems is `hyperv`. An attempt to start a container on a client
@@ -731,7 +753,7 @@ operating system older than Windows 10 1809 with `--isolation process` will fail
 On Windows server, assuming the default configuration, these commands are equivalent
 and result in `process` isolation:
 
-```PowerShell
+```powershell
 PS C:\> docker run -d microsoft/nanoserver powershell echo process
 PS C:\> docker run -d --isolation default microsoft/nanoserver powershell echo process
 PS C:\> docker run -d --isolation process microsoft/nanoserver powershell echo process
@@ -741,7 +763,7 @@ If you have set the `--exec-opt isolation=hyperv` option on the Docker `daemon`,
 are running against a Windows client-based daemon, these commands are equivalent and
 result in `hyperv` isolation:
 
-```PowerShell
+```powershell
 PS C:\> docker run -d microsoft/nanoserver powershell echo hyperv
 PS C:\> docker run -d --isolation default microsoft/nanoserver powershell echo hyperv
 PS C:\> docker run -d --isolation hyperv microsoft/nanoserver powershell echo hyperv

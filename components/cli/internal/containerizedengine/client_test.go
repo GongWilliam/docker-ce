@@ -36,10 +36,12 @@ type (
 		setLabelsFunc  func(context.Context, map[string]string) (map[string]string, error)
 		extensionsFunc func(context.Context) (map[string]prototypes.Any, error)
 		updateFunc     func(context.Context, ...containerd.UpdateContainerOpts) error
+		checkpointFunc func(context.Context, string, ...containerd.CheckpointOpts) (containerd.Image, error)
 	}
 	fakeImage struct {
 		nameFunc         func() string
 		targetFunc       func() ocispec.Descriptor
+		labelFunc        func() map[string]string
 		unpackFunc       func(context.Context, string) error
 		rootFSFunc       func(ctx context.Context) ([]digest.Digest, error)
 		sizeFunc         func(ctx context.Context) (int64, error)
@@ -168,6 +170,13 @@ func (c *fakeContainer) Update(ctx context.Context, opts ...containerd.UpdateCon
 	return nil
 }
 
+func (c *fakeContainer) Checkpoint(ctx context.Context, ref string, opts ...containerd.CheckpointOpts) (containerd.Image, error) {
+	if c.checkpointFunc != nil {
+		return c.checkpointFunc(ctx, ref, opts...)
+	}
+	return nil, nil
+}
+
 func (i *fakeImage) Name() string {
 	if i.nameFunc != nil {
 		return i.nameFunc()
@@ -180,6 +189,13 @@ func (i *fakeImage) Target() ocispec.Descriptor {
 	}
 	return ocispec.Descriptor{}
 }
+func (i *fakeImage) Labels() map[string]string {
+	if i.labelFunc != nil {
+		return i.labelFunc()
+	}
+	return nil
+}
+
 func (i *fakeImage) Unpack(ctx context.Context, name string) error {
 	if i.unpackFunc != nil {
 		return i.unpackFunc(ctx, name)
