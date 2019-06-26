@@ -11,15 +11,15 @@ clean: ## remove build artifacts
 	rm -rf ./build/* cli/winresources/rsrc_* ./man/man[1-9] docs/yaml/gen
 
 .PHONY: test-unit
-test-unit: ## run unit test
-	./scripts/test/unit $(shell go list ./... | grep -vE '/vendor/|/e2e/')
+test-unit: ## run unit tests, to change the output format use: GOTESTSUM_FORMAT=(dots|short|standard-quiet|short-verbose|standard-verbose) make test-unit 
+	gotestsum $(TESTFLAGS) -- $${TESTDIRS:-$(shell go list ./... | grep -vE '/vendor/|/e2e/')}
 
 .PHONY: test
 test: test-unit ## run tests
 
 .PHONY: test-coverage
 test-coverage: ## run test coverage
-	./scripts/test/unit-with-coverage $(shell go list ./... | grep -vE '/vendor/|/e2e/')
+	gotestsum -- -coverprofile=coverage.txt $(shell go list ./... | grep -vE '/vendor/|/e2e/')
 
 .PHONY: fmt
 fmt:
@@ -34,6 +34,10 @@ binary: ## build executable for Linux
 	@echo "WARNING: binary creates a Linux executable. Use cross for macOS or Windows."
 	./scripts/build/binary
 
+.PHONY: plugins
+plugins: ## build example CLI plugins
+	./scripts/build/plugins
+
 .PHONY: cross
 cross: ## build executable for macOS and Windows
 	./scripts/build/cross
@@ -42,9 +46,17 @@ cross: ## build executable for macOS and Windows
 binary-windows: ## build executable for Windows
 	./scripts/build/windows
 
+.PHONY: plugins-windows
+plugins-windows: ## build example CLI plugins for Windows
+	./scripts/build/plugins-windows
+
 .PHONY: binary-osx
 binary-osx: ## build executable for macOS
 	./scripts/build/osx
+
+.PHONY: plugins-osx
+plugins-osx: ## build example CLI plugins for macOS
+	./scripts/build/plugins-osx
 
 .PHONY: dynbinary
 dynbinary: ## build dynamically linked binary

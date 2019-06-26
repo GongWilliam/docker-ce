@@ -71,7 +71,7 @@ func TestDaemonDefaultNetworkPools(t *testing.T) {
 
 	// Create a bridge network and verify its subnet is the second default pool
 	name := "elango" + t.Name()
-	network.CreateNoError(t, context.Background(), c, name,
+	network.CreateNoError(context.Background(), t, c, name,
 		network.WithDriver("bridge"),
 	)
 	out, err = c.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
@@ -80,7 +80,7 @@ func TestDaemonDefaultNetworkPools(t *testing.T) {
 
 	// Create a bridge network and verify its subnet is the third default pool
 	name = "saanvi" + t.Name()
-	network.CreateNoError(t, context.Background(), c, name,
+	network.CreateNoError(context.Background(), t, c, name,
 		network.WithDriver("bridge"),
 	)
 	out, err = c.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
@@ -103,7 +103,7 @@ func TestDaemonRestartWithExistingNetwork(t *testing.T) {
 
 	// Create a bridge network
 	name := "elango" + t.Name()
-	network.CreateNoError(t, context.Background(), c, name,
+	network.CreateNoError(context.Background(), t, c, name,
 		network.WithDriver("bridge"),
 	)
 
@@ -136,7 +136,7 @@ func TestDaemonRestartWithExistingNetworkWithDefaultPoolRange(t *testing.T) {
 
 	// Create a bridge network
 	name := "elango" + t.Name()
-	network.CreateNoError(t, context.Background(), c, name,
+	network.CreateNoError(context.Background(), t, c, name,
 		network.WithDriver("bridge"),
 	)
 
@@ -147,7 +147,7 @@ func TestDaemonRestartWithExistingNetworkWithDefaultPoolRange(t *testing.T) {
 
 	// Create a bridge network
 	name = "sthira" + t.Name()
-	network.CreateNoError(t, context.Background(), c, name,
+	network.CreateNoError(context.Background(), t, c, name,
 		network.WithDriver("bridge"),
 	)
 	out, err = c.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
@@ -162,7 +162,7 @@ func TestDaemonRestartWithExistingNetworkWithDefaultPoolRange(t *testing.T) {
 
 	// Create a bridge network
 	name = "saanvi" + t.Name()
-	network.CreateNoError(t, context.Background(), c, name,
+	network.CreateNoError(context.Background(), t, c, name,
 		network.WithDriver("bridge"),
 	)
 	out1, err := c.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
@@ -341,7 +341,7 @@ func TestServiceWithDataPathPortInit(t *testing.T) {
 
 	// Create a overlay network
 	name := "saanvisthira" + t.Name()
-	network.CreateNoError(t, context.Background(), c, name,
+	network.CreateNoError(context.Background(), t, c, name,
 		network.WithDriver("overlay"))
 
 	var instances uint64 = 1
@@ -356,7 +356,7 @@ func TestServiceWithDataPathPortInit(t *testing.T) {
 	assert.Equal(t, info.Swarm.Cluster.DataPathPort, datapathPort)
 	err := c.ServiceRemove(context.Background(), serviceID)
 	assert.NilError(t, err)
-	d.SwarmLeave(true)
+	d.SwarmLeave(t, true)
 	d.Stop(t)
 
 	// Clean up , set it back to original one to make sure other tests don't fail
@@ -367,7 +367,7 @@ func TestServiceWithDataPathPortInit(t *testing.T) {
 
 	// Create a overlay network
 	name = "saanvisthira" + t.Name()
-	network.CreateNoError(t, context.Background(), c, name,
+	network.CreateNoError(context.Background(), t, c, name,
 		network.WithDriver("overlay"))
 
 	serviceID = swarm.CreateService(t, d,
@@ -382,7 +382,7 @@ func TestServiceWithDataPathPortInit(t *testing.T) {
 	assert.Equal(t, info.Swarm.Cluster.DataPathPort, defaultDataPathPort)
 	err = c.ServiceRemove(context.Background(), serviceID)
 	assert.NilError(t, err)
-	d.SwarmLeave(true)
+	d.SwarmLeave(t, true)
 	defer d.Stop(t)
 }
 
@@ -400,7 +400,7 @@ func TestServiceWithDefaultAddressPoolInit(t *testing.T) {
 
 	// Create a overlay network
 	name := "saanvisthira" + t.Name()
-	network.CreateNoError(t, context.Background(), cli, name,
+	network.CreateNoError(context.Background(), t, cli, name,
 		network.WithDriver("overlay"))
 
 	var instances uint64 = 1
@@ -424,7 +424,7 @@ func TestServiceWithDefaultAddressPoolInit(t *testing.T) {
 
 	err = cli.ServiceRemove(context.Background(), serviceID)
 	assert.NilError(t, err)
-	d.SwarmLeave(true)
+	d.SwarmLeave(t, true)
 	d.Stop(t)
 
 	// Clean up , set it back to original one to make sure other tests don't fail
@@ -432,6 +432,6 @@ func TestServiceWithDefaultAddressPoolInit(t *testing.T) {
 	ops = append(ops, daemon.WithSwarmDefaultAddrPool(ipAddr))
 	ops = append(ops, daemon.WithSwarmDefaultAddrPoolSubnetSize(24))
 	d = swarm.NewSwarm(t, testEnv, ops...)
-	d.SwarmLeave(true)
+	d.SwarmLeave(t, true)
 	defer d.Stop(t)
 }

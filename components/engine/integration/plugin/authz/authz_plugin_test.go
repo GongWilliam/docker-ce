@@ -92,7 +92,7 @@ func TestAuthZPluginAllowRequest(t *testing.T) {
 	ctx := context.Background()
 
 	// Ensure command successful
-	cID := container.Run(t, ctx, c)
+	cID := container.Run(ctx, t, c)
 
 	assertURIRecorded(t, ctrl.requestsURIs, "/containers/create")
 	assertURIRecorded(t, ctrl.requestsURIs, fmt.Sprintf("/containers/%s/start", cID))
@@ -224,7 +224,7 @@ func TestAuthZPluginAllowEventStream(t *testing.T) {
 	defer cancel()
 
 	// Create a container and wait for the creation events
-	cID := container.Run(t, ctx, c)
+	cID := container.Run(ctx, t, c)
 	poll.WaitOn(t, container.IsInState(ctx, c, cID, "running"))
 
 	created := false
@@ -348,7 +348,7 @@ func TestAuthZPluginEnsureLoadImportWorking(t *testing.T) {
 
 	exportedImagePath := filepath.Join(tmp, "export.tar")
 
-	cID := container.Run(t, ctx, c)
+	cID := container.Run(ctx, t, c)
 
 	responseReader, err := c.ContainerExport(context.Background(), cID)
 	assert.NilError(t, err)
@@ -370,46 +370,46 @@ func TestAuthzPluginEnsureContainerCopyToFrom(t *testing.T) {
 	d.StartWithBusybox(t, "--authorization-plugin="+testAuthZPlugin, "--authorization-plugin="+testAuthZPlugin)
 
 	dir, err := ioutil.TempDir("", t.Name())
-	assert.Assert(t, err)
+	assert.NilError(t, err)
 	defer os.RemoveAll(dir)
 
 	f, err := ioutil.TempFile(dir, "send")
-	assert.Assert(t, err)
+	assert.NilError(t, err)
 	defer f.Close()
 
 	buf := make([]byte, 1024)
 	fileSize := len(buf) * 1024 * 10
 	for written := 0; written < fileSize; {
 		n, err := f.Write(buf)
-		assert.Assert(t, err)
+		assert.NilError(t, err)
 		written += n
 	}
 
 	c := d.NewClientT(t)
 	ctx := context.Background()
 
-	cID := container.Run(t, ctx, c)
+	cID := container.Run(ctx, t, c)
 	defer c.ContainerRemove(ctx, cID, types.ContainerRemoveOptions{Force: true})
 
 	_, err = f.Seek(0, io.SeekStart)
-	assert.Assert(t, err)
+	assert.NilError(t, err)
 
 	srcInfo, err := archive.CopyInfoSourcePath(f.Name(), false)
-	assert.Assert(t, err)
+	assert.NilError(t, err)
 	srcArchive, err := archive.TarResource(srcInfo)
-	assert.Assert(t, err)
+	assert.NilError(t, err)
 	defer srcArchive.Close()
 
 	dstDir, preparedArchive, err := archive.PrepareArchiveCopy(srcArchive, srcInfo, archive.CopyInfo{Path: "/test"})
-	assert.Assert(t, err)
+	assert.NilError(t, err)
 
 	err = c.CopyToContainer(ctx, cID, dstDir, preparedArchive, types.CopyToContainerOptions{})
-	assert.Assert(t, err)
+	assert.NilError(t, err)
 
 	rdr, _, err := c.CopyFromContainer(ctx, cID, "/test")
-	assert.Assert(t, err)
+	assert.NilError(t, err)
 	_, err = io.Copy(ioutil.Discard, rdr)
-	assert.Assert(t, err)
+	assert.NilError(t, err)
 }
 
 func imageSave(client client.APIClient, path, image string) error {

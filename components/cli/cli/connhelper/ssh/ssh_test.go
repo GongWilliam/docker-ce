@@ -7,7 +7,7 @@ import (
 	is "gotest.tools/assert/cmp"
 )
 
-func TestParseSSHURL(t *testing.T) {
+func TestParseURL(t *testing.T) {
 	testCases := []struct {
 		url           string
 		expectedArgs  []string
@@ -29,31 +29,31 @@ func TestParseSSHURL(t *testing.T) {
 		},
 		{
 			url:           "ssh://me:passw0rd@foo",
-			expectedError: "ssh helper does not accept plain-text password",
+			expectedError: "plain-text password is not supported",
 		},
 		{
 			url:           "ssh://foo/bar",
-			expectedError: "extra path",
+			expectedError: `extra path after the host: "/bar"`,
 		},
 		{
 			url:           "ssh://foo?bar",
-			expectedError: "extra query",
+			expectedError: `extra query after the host: "bar"`,
 		},
 		{
 			url:           "ssh://foo#bar",
-			expectedError: "extra fragment",
+			expectedError: `extra fragment after the host: "bar"`,
 		},
 		{
 			url:           "ssh://",
-			expectedError: "host is not specified",
+			expectedError: "no host specified",
 		},
 		{
 			url:           "foo://bar",
-			expectedError: "expected scheme ssh",
+			expectedError: `expected scheme ssh, got "foo"`,
 		},
 	}
 	for _, tc := range testCases {
-		sp, err := parseSSHURL(tc.url)
+		sp, err := ParseURL(tc.url)
 		if tc.expectedError == "" {
 			assert.NilError(t, err)
 			assert.Check(t, is.DeepEqual(tc.expectedArgs, sp.Args()))

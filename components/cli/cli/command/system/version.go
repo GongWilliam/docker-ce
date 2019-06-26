@@ -12,8 +12,10 @@ import (
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
 	kubecontext "github.com/docker/cli/cli/context/kubernetes"
+	"github.com/docker/cli/cli/version"
+	"github.com/docker/cli/kubernetes"
 	"github.com/docker/cli/templates"
-	kubernetes "github.com/docker/compose-on-kubernetes/api"
+	kubeapi "github.com/docker/compose-on-kubernetes/api"
 	"github.com/docker/docker/api/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -135,13 +137,13 @@ func runVersion(dockerCli command.Cli, opts *versionOptions) error {
 
 	vd := versionInfo{
 		Client: clientVersion{
-			Platform:          struct{ Name string }{cli.PlatformName},
-			Version:           cli.Version,
+			Platform:          struct{ Name string }{version.PlatformName},
+			Version:           version.Version,
 			APIVersion:        dockerCli.Client().ClientVersion(),
 			DefaultAPIVersion: dockerCli.DefaultVersion(),
 			GoVersion:         runtime.Version(),
-			GitCommit:         cli.GitCommit,
-			BuildTime:         reformatDate(cli.BuildTime),
+			GitCommit:         version.GitCommit,
+			BuildTime:         reformatDate(version.BuildTime),
 			Os:                runtime.GOOS,
 			Arch:              runtime.GOARCH,
 			Experimental:      dockerCli.ClientInfo().HasExperimental,
@@ -242,7 +244,7 @@ func getKubernetesVersion(dockerCli command.Cli, kubeConfig string) *kubernetesV
 		err          error
 	)
 	if dockerCli.CurrentContext() == "" {
-		clientConfig = kubernetes.NewKubernetesConfig(kubeConfig)
+		clientConfig = kubeapi.NewKubernetesConfig(kubeConfig)
 	} else {
 		clientConfig, err = kubecontext.ConfigFromContext(dockerCli.CurrentContext(), dockerCli.ContextStore())
 	}
@@ -260,13 +262,13 @@ func getKubernetesVersion(dockerCli command.Cli, kubeConfig string) *kubernetesV
 		logrus.Debugf("failed to get Kubernetes client: %s", err)
 		return &version
 	}
-	version.StackAPI = getStackVersion(kubeClient)
+	version.StackAPI = getStackVersion(kubeClient, dockerCli.ClientInfo().HasExperimental)
 	version.Kubernetes = getKubernetesServerVersion(kubeClient)
 	return &version
 }
 
-func getStackVersion(client *kubernetesClient.Clientset) string {
-	apiVersion, err := kubernetes.GetStackAPIVersion(client)
+func getStackVersion(client *kubernetesClient.Clientset, experimental bool) string {
+	apiVersion, err := kubernetes.GetStackAPIVersion(client, experimental)
 	if err != nil {
 		logrus.Debugf("failed to get Stack API version: %s", err)
 		return "Unknown"

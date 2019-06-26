@@ -73,6 +73,7 @@ const (
 	// constant for cgroup drivers
 	cgroupFsDriver      = "cgroupfs"
 	cgroupSystemdDriver = "systemd"
+	cgroupNoneDriver    = "none"
 
 	// DefaultRuntimeName is the default runtime to be used by
 	// containerd if none is specified
@@ -116,6 +117,19 @@ func getMemoryResources(config containertypes.Resources) *specs.LinuxMemory {
 	}
 
 	return &memory
+}
+
+func getPidsLimit(config containertypes.Resources) *specs.LinuxPids {
+	if config.PidsLimit == nil {
+		return nil
+	}
+	if *config.PidsLimit <= 0 {
+		// docker API allows 0 and negative values to unset this to be consistent
+		// with default values. When updating values, runc requires -1 to unset
+		// the previous limit.
+		return &specs.LinuxPids{Limit: -1}
+	}
+	return &specs.LinuxPids{Limit: *config.PidsLimit}
 }
 
 func getCPUResources(config containertypes.Resources) (*specs.LinuxCPU, error) {
@@ -178,8 +192,8 @@ func getBlkioWeightDevices(config containertypes.Resources) ([]specs.LinuxWeight
 		}
 		weight := weightDevice.Weight
 		d := specs.LinuxWeightDevice{Weight: &weight}
-		d.Major = int64(stat.Rdev / 256)
-		d.Minor = int64(stat.Rdev % 256)
+		d.Major = int64(unix.Major(stat.Rdev))
+		d.Minor = int64(unix.Minor(stat.Rdev))
 		blkioWeightDevices = append(blkioWeightDevices, d)
 	}
 
@@ -249,8 +263,8 @@ func getBlkioThrottleDevices(devs []*blkiodev.ThrottleDevice) ([]specs.LinuxThro
 			return nil, err
 		}
 		d := specs.LinuxThrottleDevice{Rate: d.Rate}
-		d.Major = int64(stat.Rdev / 256)
-		d.Minor = int64(stat.Rdev % 256)
+		d.Major = int64(unix.Major(stat.Rdev))
+		d.Minor = int64(unix.Minor(stat.Rdev))
 		throttleDevices = append(throttleDevices, d)
 	}
 
@@ -341,6 +355,15 @@ func (daemon *Daemon) adaptContainerSettings(hostConfig *containertypes.HostConf
 			m = daemon.configStore.IpcMode
 		}
 		hostConfig.IpcMode = containertypes.IpcMode(m)
+	}
+
+	// Set default cgroup namespace mode, if unset for container
+	if hostConfig.CgroupnsMode.IsEmpty() {
+		m := config.DefaultCgroupNamespaceMode
+		if daemon.configStore != nil {
+			m = daemon.configStore.CgroupNamespaceMode
+		}
+		hostConfig.CgroupnsMode = containertypes.CgroupnsMode(m)
 	}
 
 	adaptSharedNamespaceContainer(daemon, hostConfig)
@@ -453,9 +476,11 @@ func verifyPlatformContainerResources(resources *containertypes.Resources, sysIn
 	if resources.OomKillDisable != nil && *resources.OomKillDisable && resources.Memory == 0 {
 		warnings = append(warnings, "OOM killer is disabled for the container, but no memory limit is set, this can result in the system running out of resources.")
 	}
-	if resources.PidsLimit != 0 && !sysInfo.PidsLimit {
-		warnings = append(warnings, "Your kernel does not support pids limit capabilities or the cgroup is not mounted. PIDs limit discarded.")
-		resources.PidsLimit = 0
+	if resources.PidsLimit != nil && !sysInfo.PidsLimit {
+		if *resources.PidsLimit > 0 {
+			warnings = append(warnings, "Your kernel does not support PIDs limit capabilities or the cgroup is not mounted. PIDs limit discarded.")
+		}
+		resources.PidsLimit = nil
 	}
 
 	// cpu subsystem checks and adjustments
@@ -560,6 +585,9 @@ func verifyPlatformContainerResources(resources *containertypes.Resources, sysIn
 }
 
 func (daemon *Daemon) getCgroupDriver() string {
+	if daemon.Rootless() {
+		return cgroupNoneDriver
+	}
 	cgroupDriver := cgroupFsDriver
 
 	if UsingSystemd(daemon.configStore) {
@@ -585,6 +613,9 @@ func VerifyCgroupDriver(config *config.Config) error {
 	cd := getCD(config)
 	if cd == "" || cd == cgroupFsDriver || cd == cgroupSystemdDriver {
 		return nil
+	}
+	if cd == cgroupNoneDriver {
+		return fmt.Errorf("native.cgroupdriver option %s is internally used and cannot be specified manually", cd)
 	}
 	return fmt.Errorf("native.cgroupdriver option %s not supported", cd)
 }
@@ -657,6 +688,19 @@ func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.
 	for dest := range hostConfig.Tmpfs {
 		if err := parser.ValidateTmpfsMountDestination(dest); err != nil {
 			return warnings, err
+		}
+	}
+
+	if !hostConfig.CgroupnsMode.Valid() {
+		return warnings, fmt.Errorf("invalid cgroup namespace mode: %v", hostConfig.CgroupnsMode)
+	}
+	if hostConfig.CgroupnsMode.IsPrivate() {
+		if !sysInfo.CgroupNamespaces {
+			warnings = append(warnings, "Your kernel does not support cgroup namespaces.  Cgroup namespace setting discarded.")
+		}
+
+		if hostConfig.Privileged {
+			return warnings, fmt.Errorf("privileged mode is incompatible with private cgroup namespaces.  You must run the container in the host cgroup namespace when running privileged mode")
 		}
 	}
 
@@ -745,9 +789,6 @@ func verifyDaemonSettings(conf *config.Config) error {
 
 // checkSystem validates platform-specific requirements
 func checkSystem() error {
-	if os.Geteuid() != 0 {
-		return fmt.Errorf("The Docker daemon needs to be run as root")
-	}
 	return checkKernel()
 }
 

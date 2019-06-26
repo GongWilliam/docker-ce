@@ -194,8 +194,11 @@ func (c *Cluster) Join(req types.JoinRequest) error {
 	c.nr = nr
 	c.mu.Unlock()
 
+	timeout := time.NewTimer(swarmConnectTimeout)
+	defer timeout.Stop()
+
 	select {
-	case <-time.After(swarmConnectTimeout):
+	case <-timeout.C:
 		return errSwarmJoinTimeoutReached
 	case err := <-nr.Ready():
 		if err != nil {
@@ -457,6 +460,20 @@ func (c *Cluster) Info() types.Info {
 				if n.ManagerStatus != nil {
 					info.Managers = info.Managers + 1
 				}
+			}
+		}
+
+		switch info.LocalNodeState {
+		case types.LocalNodeStateInactive, types.LocalNodeStateLocked, types.LocalNodeStateError:
+			// nothing to do
+		default:
+			if info.Managers == 2 {
+				const warn string = `WARNING: Running Swarm in a two-manager configuration. This configuration provides
+         no fault tolerance, and poses a high risk to lose control over the cluster.
+         Refer to https://docs.docker.com/engine/swarm/admin_guide/ to configure the
+         Swarm for fault-tolerance.`
+
+				info.Warnings = append(info.Warnings, warn)
 			}
 		}
 	}

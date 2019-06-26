@@ -105,7 +105,7 @@ if ($env:BUILD_TAG -match "-WoW") { $env:LCOW_MODE="" }
 # -------------------------------------------------------------------------------------------
 
 
-$SCRIPT_VER="28-Aug-2018 09:33 PDT" 
+$SCRIPT_VER="05-Feb-2019 09:03 PDT" 
 $FinallyColour="Cyan"
 
 #$env:DOCKER_DUT_DEBUG="yes" # Comment out to not be in debug mode
@@ -119,6 +119,7 @@ $FinallyColour="Cyan"
 #$env:INTEGRATION_IN_CONTAINER="yes"
 #$env:WINDOWS_BASE_IMAGE=""
 #$env:SKIP_COPY_GO="yes"
+#$env:INTEGRATION_TESTFLAGS="-test.v"
 
 Function Nuke-Everything {
     $ErrorActionPreference = 'SilentlyContinue'
@@ -374,7 +375,7 @@ Try {
         Write-Host  -ForegroundColor Green "---------------------------------------------------------------------------"
         Write-Host  -ForegroundColor Green " Failed to get a response from the control daemon. It may be down."
         Write-Host  -ForegroundColor Green " Try re-running this CI job, or ask on #docker-maintainers on docker slack"
-        Write-Host  -ForegroundColor Green " to see if the the daemon is running. Also check the service configuration."
+        Write-Host  -ForegroundColor Green " to see if the daemon is running. Also check the service configuration."
         Write-Host  -ForegroundColor Green " DOCKER_HOST is set to $DOCKER_HOST."
         Write-Host  -ForegroundColor Green "---------------------------------------------------------------------------"
         Write-Host 
@@ -409,7 +410,7 @@ Try {
     # Redirect to a temporary location. 
     $TEMPORIG=$env:TEMP
     $env:TEMP="$env:TESTRUN_DRIVE`:\$env:TESTRUN_SUBDIR\CI-$COMMITHASH"
-    $env:LOCALAPPDATA="$TEMP\localappdata"
+    $env:LOCALAPPDATA="$env:TEMP\localappdata"
     $errorActionPreference='Stop'
     New-Item -ItemType Directory "$env:TEMP" -ErrorAction SilentlyContinue | Out-Null
     New-Item -ItemType Directory "$env:TEMP\userprofile" -ErrorAction SilentlyContinue  | Out-Null
@@ -554,7 +555,7 @@ Try {
     $env:GOROOT="$env:TEMP\go"
     Write-Host -ForegroundColor Green "INFO: $(go version)"
     
-    # Work out the the -H parameter for the daemon under test (DASHH_DUT) and client under test (DASHH_CUT)
+    # Work out the -H parameter for the daemon under test (DASHH_DUT) and client under test (DASHH_CUT)
     #$DASHH_DUT="npipe:////./pipe/$COMMITHASH" # Can't do remote named pipe
     #$ip = (resolve-dnsname $env:COMPUTERNAME -type A -NoHostsFile -LlmnrNetbiosOnly).IPAddress # Useful to tie down
     $DASHH_CUT="tcp://127.0.0.1`:2357"    # Not a typo for 2375!
@@ -625,7 +626,6 @@ Try {
 
         $tries--
         if ($tries -le 0) {
-            $DumpDaemonLog=1
             Throw "ERROR: Failed to get a response from the daemon under test"
         }
         Write-Host -NoNewline "."
@@ -641,7 +641,6 @@ Try {
     $ErrorActionPreference = "Stop"
     if ($LastExitCode -ne 0) {
         Throw "ERROR: The daemon under test does not appear to be running."
-        $DumpDaemonLog=1
     }
     Write-Host
 
@@ -653,7 +652,6 @@ Try {
     $ErrorActionPreference = "Stop"
     if ($LastExitCode -ne 0) {
         Throw "ERROR: The daemon under test does not appear to be running."
-        $DumpDaemonLog=1
     }
     Write-Host
 
@@ -665,7 +663,6 @@ Try {
     $ErrorActionPreference = "Stop"
     if ($LastExitCode -ne 0) {
         Throw "ERROR: The daemon under test does not appear to be running."
-        $DumpDaemonLog=1
     }
     Write-Host
 
@@ -788,7 +785,6 @@ Try {
             $ErrorActionPreference = "Stop"
             if ($LastExitCode -ne 0) {
                 Throw "ERROR: The daemon under test does not appear to be running."
-                $DumpDaemonLog=1
             }
             Write-Host
         }
@@ -818,7 +814,7 @@ Try {
             if ($null -ne $env:INTEGRATION_IN_CONTAINER) {
                 Write-Host -ForegroundColor Green "INFO: Integration tests being run inside a container"
                 # Note we talk back through the containers gateway address
-                # And the ridiculous lengths we have to go to to get the default gateway address... (GetNetIPConfiguration doesn't work in nanoserver)
+                # And the ridiculous lengths we have to go to get the default gateway address... (GetNetIPConfiguration doesn't work in nanoserver)
                 # I just could not get the escaping to work in a single command, so output $c to a file and run that in the container instead...
                 # Not the prettiest, but it works.
                 $c | Out-File -Force "$env:TEMP\binary\runIntegrationCLI.ps1"
@@ -830,18 +826,32 @@ Try {
                                                         docker `
                                                         "`$env`:PATH`='c`:\target;'+`$env:PATH`;  `$env:DOCKER_HOST`='tcp`://'+(ipconfig | select -last 1).Substring(39)+'`:2357'; c:\target\runIntegrationCLI.ps1" | Out-Host } )
             } else  {
-                Write-Host -ForegroundColor Green "INFO: Integration tests being run from the host:"
-                Set-Location "$env:SOURCES_DRIVE`:\$env:SOURCES_SUBDIR\src\github.com\docker\docker\integration-cli"
                 $env:DOCKER_HOST=$DASHH_CUT  
                 $env:PATH="$env:TEMP\binary;$env:PATH;"  # Force to use the test binaries, not the host ones.
-                Write-Host -ForegroundColor Green "INFO: $c"
                 Write-Host -ForegroundColor Green "INFO: DOCKER_HOST at $DASHH_CUT"
+
+                $ErrorActionPreference = "SilentlyContinue"
+                Write-Host -ForegroundColor Cyan "INFO: Integration API tests being run from the host:"
+                if (!($env:INTEGRATION_TESTFLAGS)) {
+                    $env:INTEGRATION_TESTFLAGS = "-test.v"
+                }
+                Set-Location "$env:SOURCES_DRIVE`:\$env:SOURCES_SUBDIR\src\github.com\docker\docker"
+                $start=(Get-Date); Invoke-Expression ".\hack\make.ps1 -TestIntegration"; $Duration=New-Timespan -Start $start -End (Get-Date)
+                $ErrorActionPreference = "Stop"
+                if (-not($LastExitCode -eq 0)) {
+                    Throw "ERROR: Integration API tests failed at $(Get-Date). Duration`:$Duration"
+                }
+
+                $ErrorActionPreference = "SilentlyContinue"
+                Write-Host -ForegroundColor Green "INFO: Integration CLI tests being run from the host:"
+                Write-Host -ForegroundColor Green "INFO: $c"
+                Set-Location "$env:SOURCES_DRIVE`:\$env:SOURCES_SUBDIR\src\github.com\docker\docker\integration-cli"
                 # Explicit to not use measure-command otherwise don't get output as it goes
                 $start=(Get-Date); Invoke-Expression $c; $Duration=New-Timespan -Start $start -End (Get-Date)
             }
             $ErrorActionPreference = "Stop"
             if (-not($LastExitCode -eq 0)) {
-                Throw "ERROR: Integration tests failed at $(Get-Date). Duration`:$Duration"
+                Throw "ERROR: Integration CLI tests failed at $(Get-Date). Duration`:$Duration"
             }
             Write-Host  -ForegroundColor Green "INFO: Integration tests ended at $(Get-Date). Duration`:$Duration"
         } else {
@@ -923,7 +933,6 @@ Try {
         $ErrorActionPreference = "Stop"
         if ($LastExitCode -ne 0) {
             Throw "ERROR: The daemon under test does not appear to be running."
-            $DumpDaemonLog=1
         }
         Write-Host
     }
@@ -969,19 +978,19 @@ Finally {
     if ($null -ne $origGOROOT) { $env:GOROOT=$origGOROOT }
     if ($null -ne $origGOPATH) { $env:GOPATH=$origGOPATH }
 
-    # Dump the daemon log if asked to 
-    if ($daemonStarted -eq 1) {
-        if ($dumpDaemonLog -eq 1) {
-            Write-Host -ForegroundColor Cyan "----------- DAEMON LOG ------------"
-            Get-Content "$env:TEMP\dut.err" -ErrorAction SilentlyContinue | Write-Host -ForegroundColor Cyan
-            Write-Host -ForegroundColor Cyan "----------- END DAEMON LOG --------"
-        }
+    # Dump the daemon log. This will include any possible panic stack in the .err.
+    if (($daemonStarted -eq 1) -and  ($(Get-Item "$env:TEMP\dut.err").Length -gt 0)) {
+        Write-Host -ForegroundColor Cyan "----------- DAEMON LOG ------------"
+        Get-Content "$env:TEMP\dut.err" -ErrorAction SilentlyContinue | Write-Host -ForegroundColor Cyan
+        Write-Host -ForegroundColor Cyan "----------- END DAEMON LOG --------"
     }
 
     # Save the daemon under test log
     if ($daemonStarted -eq 1) {
-        Write-Host -ForegroundColor Green "INFO: Saving daemon under test log ($env:TEMP\dut.err) to $TEMPORIG\CIDUT.log"
-        Copy-Item  "$env:TEMP\dut.err" "$TEMPORIG\CIDUT.log" -Force -ErrorAction SilentlyContinue
+        Write-Host -ForegroundColor Green "INFO: Saving daemon under test log ($env:TEMP\dut.out) to $TEMPORIG\CIDUT.out"
+        Copy-Item  "$env:TEMP\dut.out" "$TEMPORIG\CIDUT.out" -Force -ErrorAction SilentlyContinue
+        Write-Host -ForegroundColor Green "INFO: Saving daemon under test log ($env:TEMP\dut.err) to $TEMPORIG\CIDUT.err"
+        Copy-Item  "$env:TEMP\dut.err" "$TEMPORIG\CIDUT.err" -Force -ErrorAction SilentlyContinue
     }
 
     Set-Location "$env:SOURCES_DRIVE\$env:SOURCES_SUBDIR" -ErrorAction SilentlyContinue

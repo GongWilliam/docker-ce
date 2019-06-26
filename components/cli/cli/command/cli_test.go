@@ -1,8 +1,11 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
+	"fmt"
+	"io/ioutil"
 	"os"
 	"runtime"
 	"testing"
@@ -10,6 +13,7 @@ import (
 	cliconfig "github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/flags"
+	clitypes "github.com/docker/cli/types"
 	"github.com/docker/docker/api"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
@@ -171,6 +175,9 @@ func TestExperimentalCLI(t *testing.T) {
 			defer dir.Remove()
 			apiclient := &fakeClient{
 				version: defaultVersion,
+				pingFunc: func() (types.Ping, error) {
+					return types.Ping{Experimental: true, OSType: "linux", APIVersion: defaultVersion}, nil
+				},
 			}
 
 			cli := &DockerCli{client: apiclient, err: os.Stderr}
@@ -246,4 +253,54 @@ func TestGetClientWithPassword(t *testing.T) {
 			assert.NilError(t, err)
 		})
 	}
+}
+
+func TestNewDockerCliAndOperators(t *testing.T) {
+	// Test default operations and also overriding default ones
+	cli, err := NewDockerCli(
+		WithContentTrust(true),
+		WithContainerizedClient(func(string) (clitypes.ContainerizedClient, error) { return nil, nil }),
+	)
+	assert.NilError(t, err)
+	// Check streams are initialized
+	assert.Check(t, cli.In() != nil)
+	assert.Check(t, cli.Out() != nil)
+	assert.Check(t, cli.Err() != nil)
+	assert.Equal(t, cli.ContentTrustEnabled(), true)
+	client, err := cli.NewContainerizedEngineClient("")
+	assert.NilError(t, err)
+	assert.Equal(t, client, nil)
+
+	// Apply can modify a dockerCli after construction
+	inbuf := bytes.NewBuffer([]byte("input"))
+	outbuf := bytes.NewBuffer(nil)
+	errbuf := bytes.NewBuffer(nil)
+	cli.Apply(
+		WithInputStream(ioutil.NopCloser(inbuf)),
+		WithOutputStream(outbuf),
+		WithErrorStream(errbuf),
+	)
+	// Check input stream
+	inputStream, err := ioutil.ReadAll(cli.In())
+	assert.NilError(t, err)
+	assert.Equal(t, string(inputStream), "input")
+	// Check output stream
+	fmt.Fprintf(cli.Out(), "output")
+	outputStream, err := ioutil.ReadAll(outbuf)
+	assert.NilError(t, err)
+	assert.Equal(t, string(outputStream), "output")
+	// Check error stream
+	fmt.Fprintf(cli.Err(), "error")
+	errStream, err := ioutil.ReadAll(errbuf)
+	assert.NilError(t, err)
+	assert.Equal(t, string(errStream), "error")
+}
+
+func TestInitializeShouldAlwaysCreateTheContextStore(t *testing.T) {
+	cli, err := NewDockerCli()
+	assert.NilError(t, err)
+	assert.NilError(t, cli.Initialize(flags.NewClientOptions(), WithInitializeClient(func(cli *DockerCli) (client.APIClient, error) {
+		return client.NewClientWithOpts()
+	})))
+	assert.Check(t, cli.ContextStore() != nil)
 }

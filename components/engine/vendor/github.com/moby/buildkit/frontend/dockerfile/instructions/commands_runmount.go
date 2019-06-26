@@ -206,22 +206,22 @@ func parseMount(value string) (*Mount, error) {
 		}
 	}
 
-	fileInfoAllowed := m.Type == MountTypeSecret || m.Type == MountTypeSSH
+	fileInfoAllowed := m.Type == MountTypeSecret || m.Type == MountTypeSSH || m.Type == MountTypeCache
 
 	if m.Mode != nil && !fileInfoAllowed {
-		return nil, errors.Errorf("mode not allowed for %q type mounts")
+		return nil, errors.Errorf("mode not allowed for %q type mounts", m.Type)
 	}
 
 	if m.UID != nil && !fileInfoAllowed {
-		return nil, errors.Errorf("uid not allowed for %q type mounts")
+		return nil, errors.Errorf("uid not allowed for %q type mounts", m.Type)
 	}
 
 	if m.GID != nil && !fileInfoAllowed {
-		return nil, errors.Errorf("gid not allowed for %q type mounts")
+		return nil, errors.Errorf("gid not allowed for %q type mounts", m.Type)
 	}
 
 	if roAuto {
-		if m.Type == MountTypeCache {
+		if m.Type == MountTypeCache || m.Type == MountTypeTmpfs {
 			m.ReadOnly = false
 		} else {
 			m.ReadOnly = true
